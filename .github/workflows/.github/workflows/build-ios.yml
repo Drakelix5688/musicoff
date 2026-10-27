@@ -1,0 +1,56 @@
+
+name: Build Musicoff for iPhone
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Download source code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Prepare Capacitor
+        run: |
+          cd src-capacitor
+          yarn install
+          yarn add @capacitor/clipboard@6 @capacitor/filesystem@6
+          rm -f ios/App/Podfile.lock
+
+      - name: Build and synchronize iOS project
+        run: yarn quasar build -m capacitor -T ios --skip-pkg
+
+      - name: Compile unsigned iPhone app
+        run: |
+          xcodebuild \
+            -workspace src-capacitor/ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/musicoff" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R "$RUNNER_TEMP/musicoff/Build/Products/Release-iphoneos/App.app" Payload/
+          zip -qr Musicoff-unsigned.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Musicoff-iPhone
+          path: Musicoff-unsigned.ipa
